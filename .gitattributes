@@ -1,0 +1,2 @@
+*.asm       text diff=astextplain eol=crlf linguist-language=Assembly
+*.inc       text diff=astextplain eol=crlf linguist-language=Assembly
