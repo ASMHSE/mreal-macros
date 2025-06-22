@@ -1,7 +1,9 @@
-; by qWord, 2014
+; by qWord, 2014; Héctor S. Enrique. 2025
 ; This file contains approximations for:
 ;
 ;   MR_LOG2 r,x        -> r=log2(x)    
+;   MR_LOG r,x         -> r=log(x)    [base = 10]
+;   MR_LN r,x          -> r=ln(x)     [base =  e]
 ;   MR_EXP r,x         -> r=exp(x) with |x| < 10000
 ;   MR_SINCOS rs,rc,x  -> rs=sin(x) and rc=cos(x) with |x| < 2^32
 ;
@@ -10,7 +12,7 @@
 ; of the form "?X", whereby X is "A"-"Z".
 
 IFNDEF MR_VERSION
-	.err <real_math.inc not inlcuded>
+    .err <real_math.inc not inlcuded>
 ELSE
 
 ;;/**
@@ -88,32 +90,32 @@ MR_SET_CONST ?BKMLD65,+,-65,4,0b8aah,3b29h,5c17h,0f0bch
 ;; * Precision is 64 bit, RM = round to nearest.
 ;; */
 MR_LOG2 macro r:req,x:req,N:=<65>
-	IF MREAL_XDIM NE 4
-		.err <precision setting not supported: 64 bit expected>
-		MR_SET_ZERO r,4
-		EXITM
-	ENDIF
-	IF MR_IS_SIGN_MINUS(x) OR NOT MR_IS_NORMAL(x)
-		MR_LOAD_CONST r,NaN
-		EXITM
-	ENDIF
-	IF N GT 66
-		.err <invalid parameter: _N: N>
-		EXITM
-	ENDIF
-	
-	;;/* reduce argument range */
-	MR_MOV ?A,x,4
-	mrld_exp = MR_EXPONENT(?A)
-	IF mrld_exp LT 1 OR mrld_exp GT 2
-		MR_EXPONENT(?A) = 1
-		mrld_exp = mrld_exp - 1
-	ELSE
-		mrld_exp = 0
-	ENDIF
-	
-	;;/**
-	;; * BKM Algorithm:
+    IF MREAL_XDIM NE 4
+        .err <precision setting not supported: 64 bit expected>
+        MR_SET_ZERO r,4
+        EXITM
+    ENDIF
+    IF MR_IS_SIGN_MINUS(x) OR NOT MR_IS_NORMAL(x)
+        MR_LOAD_CONST r,NaN
+        EXITM
+    ENDIF
+    IF N GT 66
+        .err <invalid parameter: _N: N>
+        EXITM
+    ENDIF
+    
+    ;;/* reduce argument range */
+    MR_MOV ?A,x,4
+    mrld_exp = MR_EXPONENT(?A)
+    IF mrld_exp LT 1 OR mrld_exp GT 2
+        MR_EXPONENT(?A) = 1
+        mrld_exp = mrld_exp - 1
+    ELSE
+        mrld_exp = 0
+    ENDIF
+    
+    ;;/**
+    ;; * BKM Algorithm:
     ;; *   Log2 ( arg , N ) {    // 1 <= arg <= ca. 4.768462
     ;; *      x = 1;
     ;; *      y = 0;
@@ -126,25 +128,76 @@ MR_LOG2 macro r:req,x:req,N:=<65>
     ;; *      }
     ;; *      return y;
     ;; *   }
-	;; */
-	MR_MOV ?X,?MRC_ONE,4
-	MR_SET_ZERO r,4
-	mrld_cntr = 0
-	REPEAT N
-		MR_CSCALE ?T,?X,%-mrld_cntr,MRRM_TRUNCATE,4
-		MR_ADD ?T,?X,?T,MRRM_ROUND_TO_EVEN,4
-		IF MR_LE(?T,?A,4)
-			MR_MOV ?X,?T,4
-			MR_ADD r,r,@CatStr(<?BKMLD>,%mrld_cntr),MRRM_ROUND_TO_EVEN,4
-		ENDIF
-		mrld_cntr = mrld_cntr + 1
-	ENDM
-	
-	;;/* add integer part of exponent if needed */
-	IF mrld_exp
-		MR_FROM_EXPR32 ?T,mrld_exp,MRRM_TRUNCATE,4
-		MR_ADD r,r,?T,MRRM_ROUND_TO_EVEN,4
-	ENDIF
+    ;; */
+    MR_MOV ?X,?MRC_ONE,4
+    MR_SET_ZERO r,4
+    mrld_cntr = 0
+    REPEAT N
+        MR_CSCALE ?T,?X,%-mrld_cntr,MRRM_TRUNCATE,4
+        MR_ADD ?T,?X,?T,MRRM_ROUND_TO_EVEN,4
+        IF MR_LE(?T,?A,4)
+            MR_MOV ?X,?T,4
+            MR_ADD r,r,@CatStr(<?BKMLD>,%mrld_cntr),MRRM_ROUND_TO_EVEN,4
+        ENDIF
+        mrld_cntr = mrld_cntr + 1
+    ENDM
+    
+    ;;/* add integer part of exponent if needed */
+    IF mrld_exp
+        MR_FROM_EXPR32 ?T,mrld_exp,MRRM_TRUNCATE,4
+        MR_ADD r,r,?T,MRRM_ROUND_TO_EVEN,4
+    ENDIF
+endm
+
+;;/**
+;; * Calculate log(x) using BKM Algorithm.  (log10)
+;; * Precision is 64 bit, RM = round to nearest.
+;; */
+MR_LOG macro r:req,x:req,N:=<65>
+    IF MREAL_XDIM NE 4
+        .err <precision setting not supported: 64 bit expected>
+        MR_SET_ZERO r,4
+        EXITM
+    ENDIF
+    IF MR_IS_SIGN_MINUS(x) OR NOT MR_IS_NORMAL(x)
+        MR_LOAD_CONST r,NaN
+        EXITM
+    ENDIF
+    IF N GT 66
+        .err <invalid parameter: _N: N>
+        EXITM
+    ENDIF
+
+    MR_FROM_STR $$Y, 10.0
+    MR_LOG2 $$X, x
+    MR_LOG2 $$Z, $$Y
+    MR_DIV r, $$X, $$Z
+endm
+
+;;/**
+;; * Calculate ln(x) using BKM Algorithm.  
+;; * Precision is 64 bit, RM = round to nearest.
+;; */
+MR_LN macro r:req,x:req,N:=<65>
+    IF MREAL_XDIM NE 4
+        .err <precision setting not supported: 64 bit expected>
+        MR_SET_ZERO r,4
+        EXITM
+    ENDIF
+    IF MR_IS_SIGN_MINUS(x) OR NOT MR_IS_NORMAL(x)
+        MR_LOAD_CONST r,NaN
+        EXITM
+    ENDIF
+    IF N GT 66
+        .err <invalid parameter: _N: N>
+        EXITM
+    ENDIF
+
+    MR_FROM_STR $$Y, 10.0
+    MR_LOG2 $$X, x
+    MR_LOG2 $$Z, ?BKMEP1
+    MR_DIV r, $$X, $$Z
+
 endm
 
 ;;/**
@@ -268,50 +321,50 @@ MR_SET_CONST ?BKMEL2,+,-1,5,0b172h,17f7h,0d1cfh,79abh,0c9e4h ;; Ln(2)
 ;; * Remarks: -10000 < x < 10000
 ;; */
 MR_EXP macro r:req,x:req,N:=<71>
-	IF MREAL_XDIM NE 4
-		.err <precision setting not supported: 64 bit expected>
-		MR_SET_ZERO r,4
-		EXITM
-	ENDIF
-	IF MR_IS_NAN(x)
-		MR_LOAD_CONST r,NaN
-		EXITM
-	ENDIF
-	IF MR_IS_INFINITE(x)
-		IF MR_IS_SIGN_MINUS(x)
-			MR_LOAD_CONST r,zero
-		ELSE
-			MR_LOAD_CONST r,+Infinity
-		ENDIF
-		EXITM
-	ENDIF
-	IF N GT 71
-		.err <invalid parameter: _N: N>
-		EXITM
-	ENDIF
-	mrexp_sign = MR_IS_SIGN_MINUS(x)
-	
-	;;/**
-	;; * Reduce argument range thus 0 <= arg < 1
-	;; *  arg = x - Floor(x)
-	;; */
-	MR_ABS ?A,x,4
-	MR_CONVERT ?A,?A,4,5,MRRM_TRUNCATE
-	MR_ROUND ?T,?A,,,MRRM_TRUNCATE,5
-	MR_SUB ?A,?A,?T,MRRM_TRUNCATE,5
-	mrexp_exp = MR_TO_UINT32(?T,,MRRM_ROUND_TO_EVEN,5)
-	IF mrexp_exp GT 9999
-		.err <value to large: expected: Abs(_x) LT 10000>
-		IF mrexp_sign
-			MR_LOAD_CONST r,zero
-		ELSE
-			MR_LOAD_CONST r,+Infinity
-		ENDIF
-		EXITM
-	ENDIF
-	
-	;;/**
-	;; * BKM Algorithm:
+    IF MREAL_XDIM NE 4
+        .err <precision setting not supported: 64 bit expected>
+        MR_SET_ZERO r,4
+        EXITM
+    ENDIF
+    IF MR_IS_NAN(x)
+        MR_LOAD_CONST r,NaN
+        EXITM
+    ENDIF
+    IF MR_IS_INFINITE(x)
+        IF MR_IS_SIGN_MINUS(x)
+            MR_LOAD_CONST r,zero
+        ELSE
+            MR_LOAD_CONST r,+Infinity
+        ENDIF
+        EXITM
+    ENDIF
+    IF N GT 71
+        .err <invalid parameter: _N: N>
+        EXITM
+    ENDIF
+    mrexp_sign = MR_IS_SIGN_MINUS(x)
+    
+    ;;/**
+    ;; * Reduce argument range thus 0 <= arg < 1
+    ;; *  arg = x - Floor(x)
+    ;; */
+    MR_ABS ?A,x,4
+    MR_CONVERT ?A,?A,4,5,MRRM_TRUNCATE
+    MR_ROUND ?T,?A,,,MRRM_TRUNCATE,5
+    MR_SUB ?A,?A,?T,MRRM_TRUNCATE,5
+    mrexp_exp = MR_TO_UINT32(?T,,MRRM_ROUND_TO_EVEN,5)
+    IF mrexp_exp GT 9999
+        .err <value to large: expected: Abs(_x) LT 10000>
+        IF mrexp_sign
+            MR_LOAD_CONST r,zero
+        ELSE
+            MR_LOAD_CONST r,+Infinity
+        ENDIF
+        EXITM
+    ENDIF
+    
+    ;;/**
+    ;; * BKM Algorithm:
     ;; *   Exp ( arg , N ) {    // 0 <= arg <= ca. 1.562
     ;; *      x = 1;
     ;; *      y = 0;
@@ -324,46 +377,46 @@ MR_EXP macro r:req,x:req,N:=<71>
     ;; *      }
     ;; *      return x;
     ;; *   }
-	;; */
-	MR_MOV r,?MRC_ONE,5
-	MR_SET_ZERO ?Y,5
-	mrexp_cntr = 0
-	REPEAT N
-		MR_ADD ?T,?Y,@CatStr(<?BKME>,%mrexp_cntr),MRRM_ROUND_TO_EVEN,5
-		IF MR_LE(?T,?A,5)
-			MR_MOV ?Y,?T,5
-			MR_CSCALE ?T,r,%-mrexp_cntr,MRRM_TRUNCATE,5
-			MR_ADD r,r,?T,MRRM_ROUND_TO_EVEN,5
-		ENDIF
-		mrexp_cntr = mrexp_cntr + 1
-	ENDM
-	
-	;;/* process integer exponent */
-	IF mrexp_exp
-		;;/* get exp(k) with 0 < k <= 9999  */
-		mrexp_ld = 0
-		mrexp_f = 1
-		WHILE mrexp_exp
-			mrexp_digit = mrexp_exp MOD 10
-			IF mrexp_digit
-				IF mrexp_ld
-					MR_MUL ?T,?T,@CatStr(<?BKMEP>,%mrexp_f*mrexp_digit),MRRM_ROUND_TO_EVEN,5
-				ELSE
-					MR_MOV ?T,@CatStr(<?BKMEP>,%mrexp_f*mrexp_digit),5
-					mrexp_ld = -1
-				ENDIF
-			ENDIF
-			mrexp_exp = mrexp_exp / 10
-			mrexp_f = mrexp_f * 10
-		ENDM
-		MR_MUL r,r,?T,MRRM_ROUND_TO_EVEN,5
-	ENDIF
-	IF mrexp_sign
-		;;/* e^(-x) = 1/(e^x) */
-		MR_DIV r,?MRC_ONE,r,MRRM_ROUND_TO_EVEN,5,4
-	ELSE
-		MR_CONVERT r,r,5,4,MRRM_ROUND_TO_EVEN
-	ENDIF
+    ;; */
+    MR_MOV r,?MRC_ONE,5
+    MR_SET_ZERO ?Y,5
+    mrexp_cntr = 0
+    REPEAT N
+        MR_ADD ?T,?Y,@CatStr(<?BKME>,%mrexp_cntr),MRRM_ROUND_TO_EVEN,5
+        IF MR_LE(?T,?A,5)
+            MR_MOV ?Y,?T,5
+            MR_CSCALE ?T,r,%-mrexp_cntr,MRRM_TRUNCATE,5
+            MR_ADD r,r,?T,MRRM_ROUND_TO_EVEN,5
+        ENDIF
+        mrexp_cntr = mrexp_cntr + 1
+    ENDM
+    
+    ;;/* process integer exponent */
+    IF mrexp_exp
+        ;;/* get exp(k) with 0 < k <= 9999  */
+        mrexp_ld = 0
+        mrexp_f = 1
+        WHILE mrexp_exp
+            mrexp_digit = mrexp_exp MOD 10
+            IF mrexp_digit
+                IF mrexp_ld
+                    MR_MUL ?T,?T,@CatStr(<?BKMEP>,%mrexp_f*mrexp_digit),MRRM_ROUND_TO_EVEN,5
+                ELSE
+                    MR_MOV ?T,@CatStr(<?BKMEP>,%mrexp_f*mrexp_digit),5
+                    mrexp_ld = -1
+                ENDIF
+            ENDIF
+            mrexp_exp = mrexp_exp / 10
+            mrexp_f = mrexp_f * 10
+        ENDM
+        MR_MUL r,r,?T,MRRM_ROUND_TO_EVEN,5
+    ENDIF
+    IF mrexp_sign
+        ;;/* e^(-x) = 1/(e^x) */
+        MR_DIV r,?MRC_ONE,r,MRRM_ROUND_TO_EVEN,5,4
+    ELSE
+        MR_CONVERT r,r,5,4,MRRM_ROUND_TO_EVEN
+    ENDIF
 endm
 
 
@@ -446,39 +499,39 @@ MR_SET_CONST ?COR_2RPI,+,-1,8,0a2f9h,836eh,4e44h,1529h,0fc27h,57d1h,0f534h,0ddc1
 MR_SET_CONST ?COR_PIH,+,0,8,0c90fh,0daa2h,2168h,0c234h,0c4c6h,628bh,80dch,1cd1h ;; Pi/2
 
 MR_CORDIC_ROTATION macro x0:req,y0:req,z0:req,N:req,n:=<MREAL_XDIM>
-	mrcorr_cntr = 0
-	REPEAT N
-		MR_CSCALE ?T,x0,%-mrcorr_cntr,MRRM_ROUND_TO_EVEN,n
-		MR_CSCALE ?U,y0,%-mrcorr_cntr,MRRM_ROUND_TO_EVEN,n
-		IFE MR_IS_SIGN_MINUS(z0)
-			MR_SUB x0,x0,?U,MRRM_ROUND_TO_EVEN,n
-			MR_ADD y0,y0,?T,MRRM_ROUND_TO_EVEN,n
-			MR_SUB z0,z0,@CatStr(<?COR>,%mrcorr_cntr),MRRM_ROUND_TO_EVEN,n
-		ELSE
-			MR_ADD x0,x0,?U,MRRM_ROUND_TO_EVEN,n
-			MR_SUB y0,y0,?T,MRRM_ROUND_TO_EVEN,n
-			MR_ADD z0,z0,@CatStr(<?COR>,%mrcorr_cntr),MRRM_ROUND_TO_EVEN,n
-		ENDIF
-		mrcorr_cntr = mrcorr_cntr + 1
-	ENDM
+    mrcorr_cntr = 0
+    REPEAT N
+        MR_CSCALE ?T,x0,%-mrcorr_cntr,MRRM_ROUND_TO_EVEN,n
+        MR_CSCALE ?U,y0,%-mrcorr_cntr,MRRM_ROUND_TO_EVEN,n
+        IFE MR_IS_SIGN_MINUS(z0)
+            MR_SUB x0,x0,?U,MRRM_ROUND_TO_EVEN,n
+            MR_ADD y0,y0,?T,MRRM_ROUND_TO_EVEN,n
+            MR_SUB z0,z0,@CatStr(<?COR>,%mrcorr_cntr),MRRM_ROUND_TO_EVEN,n
+        ELSE
+            MR_ADD x0,x0,?U,MRRM_ROUND_TO_EVEN,n
+            MR_SUB y0,y0,?T,MRRM_ROUND_TO_EVEN,n
+            MR_ADD z0,z0,@CatStr(<?COR>,%mrcorr_cntr),MRRM_ROUND_TO_EVEN,n
+        ENDIF
+        mrcorr_cntr = mrcorr_cntr + 1
+    ENDM
 endm
 
 ;MR_CORDIC_VECTORING macro x0:req,y0:req,z0:req,N:req,n:=<MREAL_XDIM>
-;	mrcorr_cntr = 0
-;	REPEAT N
-;		MR_CSCALE ?T,x0,%-mrcorr_cntr,MRRM_ROUND_TO_EVEN,n
-;		MR_CSCALE ?U,y0,%-mrcorr_cntr,MRRM_ROUND_TO_EVEN,n
-;		IF MR_IS_SIGN_MINUS(y0)
-;			MR_SUB x0,x0,?U,MRRM_ROUND_TO_EVEN,n
-;			MR_ADD y0,y0,?T,MRRM_ROUND_TO_EVEN,n
-;			MR_SUB z0,z0,@CatStr(<?COR>,%mrcorr_cntr),MRRM_ROUND_TO_EVEN,n
-;		ELSE
-;			MR_ADD x0,x0,?U,MRRM_ROUND_TO_EVEN,n
-;			MR_SUB y0,y0,?T,MRRM_ROUND_TO_EVEN,n
-;			MR_ADD z0,z0,@CatStr(<?COR>,%mrcorr_cntr),MRRM_ROUND_TO_EVEN,n
-;		ENDIF
-;		mrcorr_cntr = mrcorr_cntr + 1
-;	ENDM
+;    mrcorr_cntr = 0
+;    REPEAT N
+;        MR_CSCALE ?T,x0,%-mrcorr_cntr,MRRM_ROUND_TO_EVEN,n
+;        MR_CSCALE ?U,y0,%-mrcorr_cntr,MRRM_ROUND_TO_EVEN,n
+;        IF MR_IS_SIGN_MINUS(y0)
+;            MR_SUB x0,x0,?U,MRRM_ROUND_TO_EVEN,n
+;            MR_ADD y0,y0,?T,MRRM_ROUND_TO_EVEN,n
+;            MR_SUB z0,z0,@CatStr(<?COR>,%mrcorr_cntr),MRRM_ROUND_TO_EVEN,n
+;        ELSE
+;            MR_ADD x0,x0,?U,MRRM_ROUND_TO_EVEN,n
+;            MR_SUB y0,y0,?T,MRRM_ROUND_TO_EVEN,n
+;            MR_ADD z0,z0,@CatStr(<?COR>,%mrcorr_cntr),MRRM_ROUND_TO_EVEN,n
+;        ENDIF
+;        mrcorr_cntr = mrcorr_cntr + 1
+;    ENDM
 ;endm
 
 ;;/**
@@ -487,62 +540,62 @@ endm
 ;; * Precision is 64 bit, RM = round to nearest.
 ;; */
 MR_SINCOS macro rs:req,rc:req,x:req
-	
-	IF MREAL_XDIM NE 4
-		.err <precision setting not supported: 64 bit expected>
-		MR_SET_ZERO rs,4
-		MR_SET_ZERO rc,4
-		EXITM
-	ENDIF
-	IF MR_IS_ZERO(x)
-		MR_SET_ZERO rs,4
-		MR_MOV rc,?MRC_ONE,4
-		EXITM
-	ENDIF
-	IF NOT MR_IS_NORMAL(x)
-		MR_LOAD_CONST rs,NaN
-		MR_MOV rc,rs,4
-		EXITM
-	ENDIF
-	mrsc_sign = MR_IS_SIGN_MINUS(x)
-	
-	;;/**
-	;; * range reduction:
-	;; *  q = floor(|x| * 2/pi)
-	;; *  a = |x| - pi/2 * q
-	;; */
-	MR_ABS ?X,x,4
-	MR_XMUL ?A,?X,?COR_2RPI,8,4,8,MRRM_ROUND_TO_EVEN		;; |x| * 2/pi
-	MR_ROUND ?Q,?A,,,MRRM_TRUNCATE,8						;; floor(|x| * 2/pi)
-	MR_MUL ?A,?Q,?COR_PIH,MRRM_ROUND_TO_EVEN,8				;; pi/2 * floor(|x| * 2/pi)
-	MR_CONVERT ?X,?X,4,8,MRRM_TRUNCATE
-	MR_SUB ?A,?X,?A,MRRM_ROUND_TO_EVEN,8					;; |x| - pi/2 * floor(|x| * 2/pi)
-	mrsc_q = MR_TO_UINT32(?Q,,MRRM_ROUND_TO_EVEN,8) MOD 4	;; q MOD 4 = quadrant
-	
-	;;/* CORDIC */
-	MR_MOV ?X,?CORK,4
-	MR_SET_ZERO ?Y,4
+    
+    IF MREAL_XDIM NE 4
+        .err <precision setting not supported: 64 bit expected>
+        MR_SET_ZERO rs,4
+        MR_SET_ZERO rc,4
+        EXITM
+    ENDIF
+    IF MR_IS_ZERO(x)
+        MR_SET_ZERO rs,4
+        MR_MOV rc,?MRC_ONE,4
+        EXITM
+    ENDIF
+    IF NOT MR_IS_NORMAL(x)
+        MR_LOAD_CONST rs,NaN
+        MR_MOV rc,rs,4
+        EXITM
+    ENDIF
+    mrsc_sign = MR_IS_SIGN_MINUS(x)
+    
+    ;;/**
+    ;; * range reduction:
+    ;; *  q = floor(|x| * 2/pi)
+    ;; *  a = |x| - pi/2 * q
+    ;; */
+    MR_ABS ?X,x,4
+    MR_XMUL ?A,?X,?COR_2RPI,8,4,8,MRRM_ROUND_TO_EVEN        ;; |x| * 2/pi
+    MR_ROUND ?Q,?A,,,MRRM_TRUNCATE,8                        ;; floor(|x| * 2/pi)
+    MR_MUL ?A,?Q,?COR_PIH,MRRM_ROUND_TO_EVEN,8                ;; pi/2 * floor(|x| * 2/pi)
+    MR_CONVERT ?X,?X,4,8,MRRM_TRUNCATE
+    MR_SUB ?A,?X,?A,MRRM_ROUND_TO_EVEN,8                    ;; |x| - pi/2 * floor(|x| * 2/pi)
+    mrsc_q = MR_TO_UINT32(?Q,,MRRM_ROUND_TO_EVEN,8) MOD 4    ;; q MOD 4 = quadrant
+    
+    ;;/* CORDIC */
+    MR_MOV ?X,?CORK,4
+    MR_SET_ZERO ?Y,4
     MR_CONVERT ?Z,?A,8,4,MRRM_ROUND_TO_EVEN
     MR_CORDIC_ROTATION ?X,?Y,?Z,64,4
 
-	;;/* choose value by quadrant */
-	IF mrsc_q EQ 0
-		MR_MOV rs,?Y,4
-		MR_MOV rc,?X,4
-	ELSEIF mrsc_q EQ 1
-    	MR_MOV rs,?X,4
-    	MR_NEG rc,?Y,4
+    ;;/* choose value by quadrant */
+    IF mrsc_q EQ 0
+        MR_MOV rs,?Y,4
+        MR_MOV rc,?X,4
+    ELSEIF mrsc_q EQ 1
+        MR_MOV rs,?X,4
+        MR_NEG rc,?Y,4
     ELSEIF mrsc_q EQ 2
-    	MR_NEG rs,?Y,4
-    	MR_NEG rc,?X,4
+        MR_NEG rs,?Y,4
+        MR_NEG rc,?X,4
     ELSEIF mrsc_q EQ 3
-    	MR_NEG rs,?X,4
-    	MR_MOV rc,?Y,4
+        MR_NEG rs,?X,4
+        MR_MOV rc,?Y,4
     ENDIF
     
     ;;/* apply sign */
     IF mrsc_sign
-    	MR_NEG rs,rs,4
+        MR_NEG rs,rs,4
     ENDIF
 endm
 
